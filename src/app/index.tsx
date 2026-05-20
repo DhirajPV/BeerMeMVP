@@ -1,98 +1,150 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BARS, WALLET_BEERS, type Bar, type Beer, type Friend } from '@/constants/bm';
+import { BarDetailScreen, MapScreen } from '@/components/bm/bars-map';
+import { OnboardingScreen } from '@/components/bm/onboarding';
+import { ActivityScreen, HomeScreen, ProfileScreen } from '@/components/bm/screens';
+import { NoteScreen, PickFriendScreen, SentScreen } from '@/components/bm/send-flow';
+import { QRScreen, SuccessScreen, WalletScreen } from '@/components/bm/wallet-redeem';
+import type { TabId } from '@/components/bm/primitives';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+// ─── Navigation state ─────────────────────────────────────────────────────────
+type Screen =
+  | { id: 'onboarding' }
+  | { id: 'home' }
+  | { id: 'activity' }
+  | { id: 'wallet' }
+  | { id: 'qr'; beer: Beer }
+  | { id: 'success'; beer: Beer; bar: string }
+  | { id: 'map' }
+  | { id: 'bar-detail'; bar: Bar }
+  | { id: 'profile' }
+  | { id: 'pick-friend' }
+  | { id: 'add-note'; friend: Friend }
+  | { id: 'sent'; friend: Friend; note: string; count: number };
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+export default function BeerMeApp() {
+  const insets = useSafeAreaInsets();
+  const [stack, setStack] = useState<Screen[]>([{ id: 'onboarding' }]);
+  const [activeTab, setActiveTab] = useState<TabId>('home');
+
+  const current = stack[stack.length - 1];
+  const push = (screen: Screen) => setStack((s) => [...s, screen]);
+  const pop  = () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
+  const popTo = (id: Screen['id']) => setStack((s) => {
+    const idx = s.findIndex((x) => x.id === id);
+    return idx >= 0 ? s.slice(0, idx + 1) : s;
+  });
+  const reset = (screen: Screen) => setStack([screen]);
+
+  const handleTabChange = (tab: TabId) => {
+    if (tab === 'send') {
+      push({ id: 'pick-friend' });
+      return;
+    }
+    setActiveTab(tab);
+    const tabScreen: Screen =
+      tab === 'wallet'  ? { id: 'wallet' } :
+      tab === 'map'     ? { id: 'map' } :
+      tab === 'profile' ? { id: 'profile' } :
+                          { id: 'home' };
+    reset(tabScreen);
+  };
+
+  const tabProps = { activeTab, onTabChange: handleTabChange };
+
   return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+    <View style={[styles.root, { paddingTop: insets.top > 0 ? 0 : 0 }]}>
+      {current.id === 'onboarding' && (
+        <OnboardingScreen onDone={() => reset({ id: 'home' })} />
+      )}
 
-export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+      {current.id === 'home' && (
+        <HomeScreen
+          {...tabProps}
+          onSend={() => push({ id: 'pick-friend' })}
+          onWallet={() => { setActiveTab('wallet'); reset({ id: 'wallet' }); }}
+          onActivity={() => push({ id: 'activity' })}
+        />
+      )}
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+      {current.id === 'activity' && (
+        <ActivityScreen onBack={pop} />
+      )}
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+      {current.id === 'wallet' && (
+        <WalletScreen
+          {...tabProps}
+          onOpenBeer={(beer) => push({ id: 'qr', beer })}
+        />
+      )}
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+      {current.id === 'qr' && (
+        <QRScreen
+          beer={current.beer}
+          onBack={pop}
+          onRedeem={() => push({ id: 'success', beer: current.beer, bar: 'The Foxhole' })}
+        />
+      )}
+
+      {current.id === 'success' && (
+        <SuccessScreen
+          beer={current.beer}
+          bar={current.bar}
+          onDone={() => { setActiveTab('wallet'); reset({ id: 'wallet' }); }}
+        />
+      )}
+
+      {current.id === 'map' && (
+        <MapScreen
+          {...tabProps}
+          onOpenBar={(bar) => push({ id: 'bar-detail', bar })}
+        />
+      )}
+
+      {current.id === 'bar-detail' && (
+        <BarDetailScreen
+          bar={current.bar}
+          onBack={pop}
+          onRedeemHere={() => push({ id: 'qr', beer: WALLET_BEERS[0] })}
+        />
+      )}
+
+      {current.id === 'profile' && (
+        <ProfileScreen {...tabProps} />
+      )}
+
+      {current.id === 'pick-friend' && (
+        <PickFriendScreen
+          onBack={pop}
+          onPick={(friend) => push({ id: 'add-note', friend })}
+        />
+      )}
+
+      {current.id === 'add-note' && (
+        <NoteScreen
+          friend={current.friend}
+          onBack={pop}
+          onSend={({ friend, note, count }) => push({ id: 'sent', friend, note, count })}
+        />
+      )}
+
+      {current.id === 'sent' && (
+        <SentScreen
+          friend={current.friend}
+          note={current.note}
+          count={current.count}
+          onDone={() => { setActiveTab('home'); reset({ id: 'home' }); }}
+          onSendAnother={() => popTo('pick-friend')}
+        />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
   },
 });
